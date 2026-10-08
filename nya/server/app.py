@@ -32,6 +32,7 @@ from ..dashboard.api import DashboardAPI
 from ..services.metrics import PROMETHEUS_CONTENT_TYPE, MetricsCollector
 from ..services.state import load_state, resolve_state_path, save_state
 from .auth import AuthManager, AuthMiddleware
+from .nai_utility import ENTRYPOINT, adapt_request, utility_settings
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,21 @@ class NyaProxyApp:
         # Add auth middleware
         app.add_middleware(AuthMiddleware, auth=self.auth)
 
+        settings = utility_settings(self.config)
+        if settings.get("enabled") and settings.get("only_entrypoint", True):
+
+            @app.middleware("http")
+            async def utility_entrypoint_only(request, call_next):
+                if request.url.path != ENTRYPOINT and request.url.path != "/health":
+                    return JSONResponse(status_code=404, content={"error": "Not found"})
+                if request.url.path == ENTRYPOINT and request.method != "POST":
+                    return JSONResponse(
+                        status_code=405,
+                        content={"error": "POST required"},
+                        headers={"Allow": "POST"},
+                    )
+                return await call_next(request)
+
         # Set up basic routes
         self.setup_routes(app)
 
@@ -199,7 +215,29 @@ class NyaProxyApp:
                 content={"error": "Proxy service is starting up or unavailable"},
             )
 
-        req = await ProxyRequest.from_request(request)
+        settings = utility_settings(self.config)
+        if settings.get("enabled") and request.url.path == ENTRYPOINT:
+            # Require a bearer credential, never a browser session cookie.
+            if (
+                self.auth.is_auth_disabled()
+                or not request.headers.get("authorization", "").startswith("Bearer ")
+                or not self.auth.verify_api_key_header(request)
+            ):
+                return JSONResponse(
+                    status_code=403, content={"error": "Invalid proxy key"}
+                )
+            try:
+                req = await adapt_request(
+                    request, settings.get("max_body_bytes", 50 * 1024 * 1024)
+                )
+            except ValueError as exc:
+                return JSONResponse(status_code=400, content={"error": str(exc)})
+            except OverflowError:
+                return JSONResponse(
+                    status_code=413, content={"error": "Request body too large"}
+                )
+        else:
+            req = await ProxyRequest.from_request(request)
         return await self.core.handle_request(req)
 
     def _server_address(self):
@@ -237,6 +275,12 @@ class NyaProxyApp:
         """
         try:
             self.init_logging()
+            settings = utility_settings(self.config)
+            if settings.get("enabled"):
+                if self.auth.is_auth_disabled():
+                    raise RuntimeError("NAI Utility mode requires server.api_key")
+                if "novelai" not in self.config.get_apis():
+                    raise RuntimeError("NAI Utility mode requires apis.novelai")
             self._warn_if_unauthenticated()
             # Create FastAPI app with middleware pre-configured
 
@@ -248,10 +292,9 @@ class NyaProxyApp:
             # that applies a configuration change.
             self.restore_runtime_state()
             # Mount sub-applications for NyaProxy if available
-            self.init_config_ui()
-
-            # Initialize dashboard if enabled
-            self.init_dashboard()
+            if not (settings.get("enabled") and settings.get("only_entrypoint", True)):
+                self.init_config_ui()
+                self.init_dashboard()
             # Initialize proxy routes last to act as a catch-all
             self.setup_proxy_routes()
 
@@ -456,6 +499,9 @@ def parse_args():
     parser.add_argument("--port", "-p", type=int, help="Port to run the proxy on")
     parser.add_argument("--host", "-H", type=str, help="Host to run the proxy on")
 
+    parser.add_argument("--ssl-certfile", help="TLS certificate chain (optional)")
+    parser.add_argument("--ssl-keyfile", help="TLS private key (optional)")
+
     parser.add_argument(
         "--remote-url",
         "-r",
@@ -613,6 +659,11 @@ def main():
         print(f"Configuration valid: {source}")
         return
 
+    ssl_certfile = getattr(args, "ssl_certfile", None)
+    ssl_keyfile = getattr(args, "ssl_keyfile", None)
+    if bool(ssl_certfile) != bool(ssl_keyfile):
+        raise SystemExit("Both --ssl-certfile and --ssl-keyfile are required for TLS")
+
     uvicorn.run(
         "nya.server.app:create_app",
         host=host,
@@ -621,6 +672,8 @@ def main():
         reload_includes=None if args.no_reload else [WATCH_FILE],
         timeout_keep_alive=30,
         server_header=False,
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
         # Uvicorn's default config would replace the shared handlers with its
         # own formatters; None leaves our interceptor in place.
         log_config=None,

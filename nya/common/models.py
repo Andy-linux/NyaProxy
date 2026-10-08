@@ -29,6 +29,7 @@ class ProxyRequest:
         content: Optional[bytes],
         ip: str = None,
     ):
+        self.nai_utility: bool = False
         self.method: str = method
 
         # Lower number = higher priority (1=retry, 2=priority, 3=normal)

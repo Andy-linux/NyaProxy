@@ -1,0 +1,52 @@
+# Dedicated NAI-Utility-Tool gateway. Replace every change-me value before use.
+server:
+  api_key:
+    - change-me-admin-key
+    - change-me-client-key
+  nai_utility:
+    enabled: true
+    only_entrypoint: true
+    max_body_bytes: 52428800
+  dashboard:
+    enabled: false
+  logging:
+    enabled: false
+    level: warning
+  trusted_proxies: []
+  cors:
+    allow_origins: []
+    allow_credentials: false
+    allow_methods: [POST]
+    allow_headers: [Authorization, Content-Type, Accept]
+default_settings:
+  key_variable: keys
+  key_concurrency: false
+  randomness: 0
+  allowed_methods: [POST]
+  allowed_paths:
+    enabled: true
+    mode: whitelist
+    paths:
+      - /ai/generate-image
+      - /ai/generate-image-stream
+      - /ai/encode-vibe
+  queue:
+    max_size: 8
+    max_workers: 2
+    expiry_seconds: 20
+  rate_limit:
+    enabled: false
+  retry:
+    enabled: false
+  timeouts:
+    request_timeout_seconds: 25
+apis:
+  novelai:
+    name: NovelAI image API
+    endpoint: https://image.novelai.net
+    key_variable: keys
+    headers:
+      Authorization: "Bearer ${{keys}}"
+    variables:
+      keys:
+        - change-me-real-nai-key

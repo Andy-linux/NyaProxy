@@ -4,6 +4,7 @@ Simplified request executor focused on HTTP execution only.
 
 import logging
 import time
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Optional, Union
 
 import httpx
@@ -109,7 +110,7 @@ class RequestExecutor:
             raise
 
         # Log request/response details on error response
-        if response.status_code >= 400:
+        if response.status_code >= 400 and not request.nai_utility:
             logger.debug(f"[Request] Content: {json_safe_dumps(request.content)}")
 
         logger.debug(
@@ -167,17 +168,38 @@ class RequestExecutor:
         """
         Execute the actual HTTP request.
         """
-        stream = self.client.stream(
-            method=request.method,
-            url=request.url,
-            headers=self._prepare_request_headers(request.headers),
-            content=request.content,
-            timeout=timeout,
-        )
+        if request.nai_utility:
+            stream = self._utility_stream(request, timeout)
+        else:
+            stream = self.client.stream(
+                method=request.method,
+                url=request.url,
+                headers=self._prepare_request_headers(request.headers),
+                content=request.content,
+                timeout=timeout,
+            )
 
         response = await stream.__aenter__()
         response._stream_ctx = stream
         return response
+
+    @asynccontextmanager
+    async def _utility_stream(self, request, timeout):
+        outgoing = self.client.build_request(
+            method=request.method,
+            url=request.url,
+            content=request.content,
+            timeout=timeout,
+        )
+        # Replace rather than merge: remove HTTPX defaults, cookies and client IDs.
+        outgoing.headers = httpx.Headers(request.headers)
+        outgoing.headers["Host"] = outgoing.url.netloc.decode("ascii")
+        outgoing.headers["Content-Length"] = str(len(request.content or b""))
+        response = await self.client.send(outgoing, stream=True, follow_redirects=False)
+        try:
+            yield response
+        finally:
+            await response.aclose()
 
     def _get_timeout(self, api_name: Optional[str] = None) -> httpx.Timeout:
         """

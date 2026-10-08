@@ -298,6 +298,9 @@ class ConfigManager:
         """
         return self.config.get_int("server.port", DEFAULT_PORT)
 
+    def get_nai_utility_settings(self) -> Dict[str, Any]:
+        return self.config.get_dict("server.nai_utility", {})
+
     def get_dashboard_enabled(self) -> bool:
         """
         Check if dashboard is enabled.

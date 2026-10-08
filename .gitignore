@@ -182,3 +182,7 @@ config.yaml
 
 # Runtime state (rate-limit windows, key cool-downs) persisted across restarts
 .nya_state.json
+
+# Local NAI gateway deployment secrets
+data/
+certs/

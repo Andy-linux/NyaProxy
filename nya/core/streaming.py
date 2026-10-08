@@ -163,6 +163,9 @@ def detect_streaming_content(headers: httpx.Headers) -> bool:
     ct_full = headers.get("content-type", "").lower()
     ct: str = ct_full.split(";")[0].strip()
 
+    if ct == "text/event-stream":
+        return True
+
     uses_chunked = "chunked" in te
     no_length = cl is None
     supports_range = "bytes" in ar

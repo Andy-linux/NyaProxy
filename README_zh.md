@@ -1,3 +1,5 @@
+> 本分支新增 [NAI-Utility-Tool 专用中转](docs/nai-utility.md)，支持单 URL 业务分流、最小上游请求头和无需 Nginx 的直接 TLS 部署。
+
 # NyaProxy
 
 **一个轻量级、基于请求头的 API 代理，用于管理需要密钥或令牌认证的上游服务。**

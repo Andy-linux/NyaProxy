@@ -255,6 +255,9 @@ class RequestHandler:
 
         This method can be overridden to implement custom request body modifications.
         """
+        if request.nai_utility:
+            return
+
         content_type = request.headers.get("content-type", "").lower()
         if "application/json" not in content_type:
             return
@@ -283,6 +286,21 @@ class RequestHandler:
         # Ensure we have an API key
         if not request.api_key:
             raise MissingAPIKeyError(f"Missing API key for {api_name}")
+
+        if request.nai_utility:
+            # Ignore client headers and browser-style configured templates alike.
+            from httpx import Headers
+
+            request.headers = Headers(
+                {
+                    "Authorization": f"Bearer {request.api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "text/event-stream"
+                    if request.trail_path == "/ai/generate-image-stream"
+                    else "*/*",
+                }
+            )
+            return
 
         # Get key variable for the API
         key_variable = self.config.get_api_key_variable(api_name)

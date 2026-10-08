@@ -449,6 +449,25 @@
                 },
                 "timeouts": {
                     "$ref": "#/$defs/default_settings/properties/timeouts"
+                },
+                "nai_utility": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "only_entrypoint": {
+                            "type": "boolean",
+                            "default": true
+                        },
+                        "max_body_bytes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "default": 52428800
+                        }
+                    }
                 }
             },
             "additionalProperties": false
