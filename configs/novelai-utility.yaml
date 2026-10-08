@@ -6,6 +6,7 @@ server:
   nai_utility:
     enabled: true
     only_entrypoint: true
+    max_waiting_requests: 2
     max_body_bytes: 33554432
     max_waiting_body_bytes: 100663296
     upload_timeout_seconds: 10
@@ -35,7 +36,7 @@ default_settings:
       - /ai/generate-image-stream
       - /ai/encode-vibe
   queue:
-    max_size: 4
+    max_size: 2
     max_workers: 1
     expiry_seconds: 10
   rate_limit:

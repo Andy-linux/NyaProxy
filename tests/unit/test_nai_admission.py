@@ -60,26 +60,43 @@ async def settle():
 
 
 @pytest.mark.asyncio
-async def test_one_running_four_waiting_fifth_rejected_before_read():
+async def test_one_running_two_waiting_fourth_rejected_before_read():
     admission, core = UtilityAdmission(), Core()
     tasks = []
-    for _ in range(5):
+    for _ in range(3):
         tasks.append(
             asyncio.create_task(admission.handle(Incoming().request, core, {}))
         )
         await settle()
-    assert core.calls == 1 and admission.admitted == 5
+    assert core.calls == 1 and admission.admitted == 3
     extra = Incoming()
     assert (await admission.handle(extra.request, core, {})).status_code == 503
     assert extra.reads == 0
     core.gate.set()
     assert all(r.status_code == 200 for r in await asyncio.gather(*tasks))
-    assert core.calls == 5
+    assert core.calls == 3
     assert (admission.admitted, admission.uploading, admission.waiting_bytes) == (
         0,
         0,
         0,
     )
+
+
+@pytest.mark.asyncio
+async def test_configurable_waiting_limit_zero_rejects_second_before_read():
+    admission, core = UtilityAdmission(), Core()
+    settings = {"max_waiting_requests": 0}
+    active = asyncio.create_task(admission.handle(Incoming().request, core, settings))
+    await settle()
+    assert core.calls == 1 and admission.admitted == 1
+
+    extra = Incoming()
+    assert (await admission.handle(extra.request, core, settings)).status_code == 503
+    assert extra.reads == 0
+
+    core.gate.set()
+    assert (await active).status_code == 200
+    assert admission.admitted == 0
 
 
 @pytest.mark.asyncio

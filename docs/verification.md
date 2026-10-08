@@ -22,7 +22,7 @@ The repository already exists; this update is a source change, not a server depl
 
 ## Automated checks
 
-Final source candidate: **425 tests passed** (125.48 seconds). Ruff lint and
+Historical source candidate (before two-waiter capacity reduction): **425 tests passed** (125.48 seconds). Ruff lint and
 format checks passed, mypy passed for its configured 14-file ratchet, and the
 example configuration validated. One existing pytest warning is noted in the
 test output; no failing tests.
@@ -68,3 +68,12 @@ service planning range is a target, not a promise. Keep the single-process profi
 multiple workers/replicas would have independent in-memory limits.
 
 For deployment and timeout/error semantics, see [nai-utility.md](nai-utility.md).
+
+## Subsequent capacity configuration change
+
+The dedicated Utility gateway was later limited to **one executing request plus two
+waiting/uploading requests** (fourth simultaneous request returns HTTP 503 without
+reading its body). The existing mock load results above describe the prior
+one-plus-four configuration and must not be represented as fresh measurements for
+the tightened capacity. The current preset is `server.nai_utility.max_waiting_requests: 2`
+with the underlying queue `max_size: 2`.

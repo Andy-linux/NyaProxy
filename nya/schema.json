@@ -462,6 +462,12 @@
                             "type": "boolean",
                             "default": true
                         },
+                        "max_waiting_requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 2,
+                            "description": "Pending upload/queue requests in addition to the one executing request"
+                        },
                         "max_body_bytes": {
                             "type": "integer",
                             "minimum": 1,
