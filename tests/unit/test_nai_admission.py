@@ -60,21 +60,21 @@ async def settle():
 
 
 @pytest.mark.asyncio
-async def test_one_running_two_waiting_fourth_rejected_before_read():
+async def test_one_running_one_waiting_third_rejected_before_read():
     admission, core = UtilityAdmission(), Core()
     tasks = []
-    for _ in range(3):
+    for _ in range(2):
         tasks.append(
             asyncio.create_task(admission.handle(Incoming().request, core, {}))
         )
         await settle()
-    assert core.calls == 1 and admission.admitted == 3
+    assert core.calls == 1 and admission.admitted == 2
     extra = Incoming()
     assert (await admission.handle(extra.request, core, {})).status_code == 503
     assert extra.reads == 0
     core.gate.set()
     assert all(r.status_code == 200 for r in await asyncio.gather(*tasks))
-    assert core.calls == 3
+    assert core.calls == 2
     assert (admission.admitted, admission.uploading, admission.waiting_bytes) == (
         0,
         0,

@@ -69,11 +69,23 @@ multiple workers/replicas would have independent in-memory limits.
 
 For deployment and timeout/error semantics, see [nai-utility.md](nai-utility.md).
 
-## Subsequent capacity configuration change
+## Historical capacity configuration change (one plus two)
 
 The dedicated Utility gateway was later limited to **one executing request plus two
 waiting/uploading requests** (fourth simultaneous request returns HTTP 503 without
 reading its body). The existing mock load results above describe the prior
 one-plus-four configuration and must not be represented as fresh measurements for
-the tightened capacity. The current preset is `server.nai_utility.max_waiting_requests: 2`
-with the underlying queue `max_size: 2`.
+the tightened capacity. That intermediate preset used `server.nai_utility.max_waiting_requests: 2`
+with the underlying queue `max_size: 2`; it has since been superseded.
+
+## Latest capacity change (one plus one)
+
+The dedicated Utility gateway now admits **one executing request and one
+waiting/uploading request**. A third simultaneous request receives HTTP 503
+before its body is read. The code default, JSON schema default, example
+`server.nai_utility.max_waiting_requests: 1`, and underlying queue
+`max_size: 1` are aligned. The capacity unit test was updated accordingly.
+
+The 425-test result and mock load measurements above are historical, not a
+fresh test run against this capacity change. No production deployment or
+real NovelAI API call is implied by the repository update.

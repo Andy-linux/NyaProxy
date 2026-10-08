@@ -25,7 +25,7 @@ class UtilityAdmission:
     async def handle(self, request, core, settings):
         limit = int(settings.get("max_body_bytes", 32 * 1024 * 1024))
         budget = int(settings.get("max_waiting_body_bytes", 96 * 1024 * 1024))
-        max_waiting_requests = int(settings.get("max_waiting_requests", 2))
+        max_waiting_requests = int(settings.get("max_waiting_requests", 1))
         # Never trust Content-Length to reserve less memory: chunked and dishonest
         # senders get the same hard cap, and no request body is read on rejection.
         if (
