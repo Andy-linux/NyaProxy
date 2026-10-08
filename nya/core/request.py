@@ -2,6 +2,7 @@
 Simplified request executor focused on HTTP execution only.
 """
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -98,7 +99,7 @@ class RequestExecutor:
         # and the failure is counted — otherwise active leaks upward forever.
         try:
             response = await self.execute_request(request, self._get_timeout(api_name))
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             if track:
                 self.metrics_collector.record_response(
                     api_name,
@@ -125,7 +126,7 @@ class RequestExecutor:
             f"({format_elapsed_time(time.time() - actual_start_time)})"
         )
 
-        if detect_streaming_content(response.headers):
+        if request.nai_utility or detect_streaming_content(response.headers):
             streaming = await handle_streaming_response(response)
             if track:
                 streaming._nya_add_finalizer(

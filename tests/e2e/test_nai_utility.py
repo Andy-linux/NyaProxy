@@ -46,6 +46,18 @@ def utility_gateway(tmp_path):
                 media_type="application/zip",
                 headers={"content-encoding": "gzip"},
             )
+        if payload.get("input") == "slow-zip":
+
+            async def binary():
+                yield ZIP_BYTES[:4]
+                await asyncio.sleep(0.5)
+                yield ZIP_BYTES[4:]
+
+            return StreamingResponse(
+                binary(),
+                media_type="application/zip",
+                headers={"content-length": str(len(ZIP_BYTES))},
+            )
         if path.endswith("stream"):
 
             async def events():
@@ -271,3 +283,18 @@ def test_status_compression_and_redirect_passthrough(utility_gateway):
     response = client.post(ENTRYPOINT, json=generate(prompt="redirect"))
     assert response.status_code == 307
     assert len(records) == 3
+
+
+def test_zip_with_length_is_incremental(utility_gateway):
+    client, _ = utility_gateway
+    with client.stream(
+        "POST", ENTRYPOINT, json=generate(prompt="slow-zip")
+    ) as response:
+        chunks = response.iter_raw()
+        first = next(chunks)
+        arrived = time.monotonic()
+        remaining = b"".join(chunks)
+        assert time.monotonic() - arrived > 0.3
+        assert first + remaining == ZIP_BYTES
+        assert "content-length" not in response.headers
+    assert client.post(ENTRYPOINT, json=generate()).status_code == 200

@@ -108,3 +108,43 @@ async def test_finalizers_run_when_teardown_is_cancelled():
             pass
 
     assert released == ["key"]
+
+
+@pytest.mark.asyncio
+async def test_disconnect_shields_upstream_close():
+    import asyncio
+
+    import httpx
+
+    from nya.core.streaming import handle_streaming_response
+
+    first = asyncio.Event()
+    closed = []
+
+    class Body(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"first"
+            await asyncio.Event().wait()
+
+    class Context:
+        async def __aexit__(self, *args):
+            await asyncio.sleep(0.01)
+            closed.append("transport")
+
+    upstream = httpx.Response(200, stream=Body())
+    upstream._stream_ctx = Context()
+    response = await handle_streaming_response(upstream)
+    response._nya_add_finalizer(lambda: closed.append("key"))
+
+    async def receive():
+        await first.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.body":
+            first.set()
+
+    await response({"type": "http", "asgi": {"spec_version": "2.3"}}, receive, send)
+    assert closed == ["transport", "key"]
+    await response._nya_close()
+    assert closed == ["transport", "key"]

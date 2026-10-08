@@ -32,7 +32,8 @@ from ..dashboard.api import DashboardAPI
 from ..services.metrics import PROMETHEUS_CONTENT_TYPE, MetricsCollector
 from ..services.state import load_state, resolve_state_path, save_state
 from .auth import AuthManager, AuthMiddleware
-from .nai_utility import ENTRYPOINT, adapt_request, utility_settings
+from .nai_admission import UtilityAdmission
+from .nai_utility import ENTRYPOINT, utility_settings
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class NyaProxyApp:
         self._init_config(config_path=config_path, schema_path=schema_path)
 
         self.core = None
+        self.utility_admission = UtilityAdmission()
         self.metrics_collector = None
         self.auth = AuthManager(config=self.config)
         self.dashboard = None
@@ -226,16 +228,7 @@ class NyaProxyApp:
                 return JSONResponse(
                     status_code=403, content={"error": "Invalid proxy key"}
                 )
-            try:
-                req = await adapt_request(
-                    request, settings.get("max_body_bytes", 50 * 1024 * 1024)
-                )
-            except ValueError as exc:
-                return JSONResponse(status_code=400, content={"error": str(exc)})
-            except OverflowError:
-                return JSONResponse(
-                    status_code=413, content={"error": "Request body too large"}
-                )
+            return await self.utility_admission.handle(request, self.core, settings)
         else:
             req = await ProxyRequest.from_request(request)
         return await self.core.handle_request(req)

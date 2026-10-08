@@ -496,3 +496,63 @@ async def test_cancelled_client_frees_its_worker_immediately():
             break
     assert queue.get_all_waiting_counts() == {}
     await queue.close()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_execution_releases_key_and_worker_survives():
+    config = CoreConfig()
+    config.key_concurrency = False
+    config.keys = ["key-a"]
+    control = TrafficManager(config)
+    queue = RequestQueue(config, control)
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+    calls = 0
+
+    async def process(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return Response(b"ok")
+
+    queue.register_processor(process)
+    request = make_request()
+    request.api_name = "mock"
+    future = await queue.enqueue_request(request)
+    await asyncio.wait_for(started.wait(), 1)
+    future.cancel()
+    await asyncio.wait_for(cancelled.wait(), 1)
+    second = make_request()
+    second.api_name = "mock"
+    response = await asyncio.wait_for(await queue.enqueue_request(second), 1)
+    assert response.status_code == 200 and calls == 2
+    await queue.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expired", [False, True])
+async def test_abandoned_waiter_never_acquires_key(expired):
+    config = CoreConfig()
+    control = TrafficManager(config)
+    queue = RequestQueue(config, control)
+    request = make_request()
+    request.api_name = "mock"
+    request.future = asyncio.Future()
+    if expired:
+        request.added_at -= 20
+    else:
+        request.future.cancel()
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Abandoned request acquired a key")
+
+    control.try_acquire_key = forbidden
+    assert await queue._wait_for_key("mock", request) is None
+    if expired:
+        with pytest.raises(RequestExpiredError):
+            request.future.result()

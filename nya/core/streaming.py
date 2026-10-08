@@ -2,11 +2,13 @@
 Streaming response handling utilities for NyaProxy.
 """
 
+import asyncio
 import logging
 import traceback
 from collections.abc import Callable
 from typing import Awaitable, Optional
 
+import anyio
 import httpx
 from starlette.responses import StreamingResponse
 
@@ -46,23 +48,28 @@ async def handle_streaming_response(response: httpx.Response) -> StreamingRespon
         if finalized:
             return
         finalized = True
-        try:
-            if hasattr(response, "_stream_ctx") and response._stream_ctx:
-                await response._stream_ctx.__aexit__(None, None, None)
-                response._stream_ctx = None
-        finally:
-            # Finalizers release the credential. Closing an already-broken
-            # upstream stream can raise, and cancellation can interrupt the
-            # await above; either way the key must still go back into
-            # rotation, because nothing else ever expires the lock taken by
-            # key_concurrency: false.
-            for callback in finalizers:
-                try:
-                    result = callback()
-                    if result is not None:
-                        await result
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.error(f"Stream finalizer failed: {exc}")
+        # Starlette may cancel the entire AnyIO task group on disconnect.
+        # Close the upstream transport before returning its exclusive key.
+        with anyio.CancelScope(shield=True):
+            try:
+                if hasattr(response, "_stream_ctx") and response._stream_ctx:
+                    await response._stream_ctx.__aexit__(None, None, None)
+                    response._stream_ctx = None
+            finally:
+                # Finalizers release the credential. Closing an already-broken
+                # upstream stream can raise, and cancellation can interrupt the
+                # await above; either way the key must still go back into
+                # rotation, because nothing else ever expires the lock taken by
+                # key_concurrency: false.
+                callbacks = finalizers[:]
+                finalizers.clear()
+                for callback in callbacks:
+                    try:
+                        result = callback()
+                        if result is not None:
+                            await result
+                    except Exception as exc:  # pragma: no cover - defensive
+                        logger.error(f"Stream finalizer failed: {exc}")
 
     def add_finalizer(
         callback: Callable[[], Optional[Awaitable[None]]],
@@ -82,7 +89,15 @@ async def handle_streaming_response(response: httpx.Response) -> StreamingRespon
         finally:
             await finalize()
 
-    streaming = StreamingResponse(
+    class ManagedStreamingResponse(StreamingResponse):
+        async def __call__(self, scope, receive, send):
+            try:
+                async with asyncio.timeout_at(getattr(self, "_nya_deadline", None)):
+                    await super().__call__(scope, receive, send)
+            finally:
+                await finalize()
+
+    streaming = ManagedStreamingResponse(
         content=event_generator(),
         status_code=status_code,
         media_type=media_type,

@@ -465,7 +465,27 @@
                         "max_body_bytes": {
                             "type": "integer",
                             "minimum": 1,
-                            "default": 52428800
+                            "default": 33554432
+                        },
+                        "max_waiting_body_bytes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "default": 100663296
+                        },
+                        "upload_timeout_seconds": {
+                            "type": "number",
+                            "minimum": 0.001,
+                            "default": 10
+                        },
+                        "queue_wait_seconds": {
+                            "type": "number",
+                            "minimum": 0.001,
+                            "default": 10
+                        },
+                        "total_timeout_seconds": {
+                            "type": "number",
+                            "minimum": 0.001,
+                            "default": 25
                         }
                     }
                 }

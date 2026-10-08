@@ -124,6 +124,7 @@ class RequestQueue:
             return
 
         while True:
+            request = None
             try:
                 # Get next request (blocks until available)
                 request: "ProxyRequest" = await self._queues[api_name].get()
@@ -159,6 +160,9 @@ class RequestQueue:
                     f"Error in queue processor for {api_name}: {e}, traceback: {traceback.format_exc()}    "
                 )
                 await asyncio.sleep(1)
+            finally:
+                # Do not retain a large completed body while the worker is idle.
+                request = None
 
     async def _wait_for_key(
         self, api_name: str, request: "ProxyRequest"
@@ -193,6 +197,15 @@ class RequestQueue:
         try:
             async with cond:
                 while True:
+                    if request.future.done() or self._is_request_expired(request):
+                        if not request.future.done():
+                            request.future.set_exception(
+                                RequestExpiredError(
+                                    api_name=api_name,
+                                    wait_time=time.time() - request.added_at,
+                                )
+                            )
+                        return None
                     proxy_wait = (
                         await self._check_for_proxy_limit(api_name, request)
                         if request._rate_limited
@@ -276,15 +289,39 @@ class RequestQueue:
         """
         # The client may have gone away while this request waited for a key;
         # give the acquired resources back instead of burning upstream quota.
-        if request.future.done():
+        if request.future.done() or self._is_request_expired(request):
             self._free_resources_on_failure(request, 0)
+            if not request.future.done():
+                request.future.set_exception(
+                    RequestExpiredError(
+                        api_name=api_name, wait_time=time.time() - request.added_at
+                    )
+                )
             return
 
         try:
             # Process the request
             request.attempts += 1
             started_at = time.time()
-            response = await self._processor(request)
+            processing = asyncio.create_task(self._processor(request))
+
+            def cancel_processing(future):
+                if future.cancelled():
+                    processing.cancel()
+
+            request.future.add_done_callback(cancel_processing)
+            try:
+                response = await processing
+            except asyncio.CancelledError:
+                self._free_resources_on_failure(request, 0)
+                if not request.future.done():
+                    request.future.cancel()
+                # Client cancellation must not terminate the reusable worker.
+                if asyncio.current_task().cancelling():
+                    raise
+                return
+            finally:
+                request.future.remove_done_callback(cancel_processing)
 
             if request.future.done():
                 self._free_resources_on_failure(request, 0)
@@ -293,7 +330,15 @@ class RequestQueue:
 
             # Release resources if response indicates failure
             if response.status_code >= 400:
-                self._free_resources_on_failure(request, response.status_code)
+                add_finalizer = getattr(response, "_nya_add_finalizer", None)
+                if request.nai_utility and add_finalizer:
+                    add_finalizer(
+                        lambda: self._free_resources_on_failure(
+                            request, response.status_code
+                        )
+                    )
+                else:
+                    self._free_resources_on_failure(request, response.status_code)
                 self._block_key_for_status(request, response.status_code)
 
             # If status code requires retry, handle it
@@ -304,9 +349,10 @@ class RequestQueue:
             if response.status_code < 400:
                 add_finalizer = getattr(response, "_nya_add_finalizer", None)
                 if add_finalizer:
+                    api_key = request.api_key
                     add_finalizer(
                         lambda: self._finish_streaming_request(
-                            api_name, request.api_key, started_at
+                            api_name, api_key, started_at
                         )
                     )
                 else:
@@ -472,6 +518,9 @@ class RequestQueue:
         """
         Check if request has expired.
         """
+        deadline = getattr(request, "_nai_deadline", None)
+        if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+            return True
         expiry_seconds = self.config.get_api_queue_expiry(request.api_name)
         return time.time() - request.added_at > expiry_seconds
 
