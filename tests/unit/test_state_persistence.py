@@ -12,6 +12,8 @@ import stat
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from nya.core.control import TrafficManager
 from nya.server import app as server_app
 from nya.services.limit import RateLimiter
@@ -212,6 +214,10 @@ def test_save_and_load_round_trip(tmp_path):
     assert load_state(path) == {"rate_limiters": {"a": {"timestamps": [1.0]}}}
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows chmod does not implement POSIX mode bits; ACLs require separate deployment verification",
+)
 def test_state_file_is_not_world_readable(tmp_path):
     """Even hashed, this is operational data about credential usage."""
     path = tmp_path / "state.json"

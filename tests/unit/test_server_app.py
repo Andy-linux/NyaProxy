@@ -482,6 +482,18 @@ def test_main_sets_environment_and_runs_uvicorn(monkeypatch, tmp_path):
     )
     monkeypatch.setattr("importlib.resources.path", fake_resource_path)
 
+    # main mutates environment directly: register original values with pytest
+    # so running unit-before-e2e does not leak a synthetic remote origin.
+    for name in (
+        "CONFIG_PATH",
+        "SCHEMA_PATH",
+        "SERVER_HOST",
+        "SERVER_PORT",
+        "REMOTE_CONFIG_URL",
+        "REMOTE_CONFIG_API_KEY",
+        "REMOTE_CONFIG_APP_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
     server_app.main()
 
     assert os.environ["CONFIG_PATH"] == "config.yaml"

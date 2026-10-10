@@ -98,7 +98,12 @@ class RequestExecutor:
         # record an outcome (status 0) so the active-request gauge is balanced
         # and the failure is counted — otherwise active leaks upward forever.
         try:
-            response = await self.execute_request(request, self._get_timeout(api_name))
+            timeout = self._get_timeout(api_name)
+            if hasattr(request, "_nai_timeout"):
+                timeout = httpx.Timeout(
+                    request._nai_timeout, connect=min(5.0, request._nai_timeout)
+                )
+            response = await self.execute_request(request, timeout)
         except (Exception, asyncio.CancelledError):
             if track:
                 self.metrics_collector.record_response(
@@ -114,12 +119,13 @@ class RequestExecutor:
         if response.status_code >= 400 and not request.nai_utility:
             logger.debug(f"[Request] Content: {json_safe_dumps(request.content)}")
 
-        logger.debug(
-            f"[Request] Headers: {json_safe_dumps(redact_sensitive_data(request.headers))}"
-        )
-        logger.debug(
-            f"[Response] Headers: {json_safe_dumps(redact_sensitive_data(response.headers))}"
-        )
+        if not request.nai_utility:
+            logger.debug(
+                f"[Request] Headers: {json_safe_dumps(redact_sensitive_data(request.headers))}"
+            )
+            logger.debug(
+                f"[Response] Headers: {json_safe_dumps(redact_sensitive_data(response.headers))}"
+            )
 
         logger.debug(
             f"[Response] URL: {request.url}, Status: {response.status_code} "

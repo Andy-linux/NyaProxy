@@ -22,7 +22,7 @@ class UtilityAdmission:
         self.waiting_bytes = 0
         self.execution = asyncio.Semaphore(1)
 
-    async def handle(self, request, core, settings):
+    async def handle(self, request, core, settings, adapter=adapt_request):
         limit = int(settings.get("max_body_bytes", 32 * 1024 * 1024))
         budget = int(settings.get("max_waiting_body_bytes", 96 * 1024 * 1024))
         max_waiting_requests = int(settings.get("max_waiting_requests", 1))
@@ -81,7 +81,7 @@ class UtilityAdmission:
                 async with asyncio.timeout(
                     float(settings.get("upload_timeout_seconds", 10))
                 ):
-                    req = await adapt_request(request, limit)
+                    req = await adapter(request, limit)
                 req._nai_deadline = deadline
                 self.uploading -= 1
                 uploading = False
@@ -103,7 +103,9 @@ class UtilityAdmission:
                 if add_finalizer:
                     handed_off = True
                     add_finalizer(release)
-                    response._nya_deadline = deadline
+                    response._nya_deadline = min(
+                        deadline, getattr(response, "_nya_deadline", deadline)
+                    )
                 return response
         except OverflowError:
             return JSONResponse({"error": "Request body too large"}, 413)

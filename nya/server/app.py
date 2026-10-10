@@ -33,6 +33,7 @@ from ..services.metrics import PROMETHEUS_CONTENT_TYPE, MetricsCollector
 from ..services.state import load_state, resolve_state_path, save_state
 from .auth import AuthManager, AuthMiddleware
 from .nai_admission import UtilityAdmission
+from .nai_native import ROOT, ROUTES, NativeGateway
 from .nai_utility import ENTRYPOINT, utility_settings
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ class NyaProxyApp:
 
         self.core = None
         self.utility_admission = UtilityAdmission()
+        self.native_gateway = NativeGateway()
         self.metrics_collector = None
         self.auth = AuthManager(config=self.config)
         self.dashboard = None
@@ -124,17 +126,29 @@ class NyaProxyApp:
         app.add_middleware(AuthMiddleware, auth=self.auth)
 
         settings = utility_settings(self.config)
-        if settings.get("enabled") and settings.get("only_entrypoint", True):
+        if settings.get("enabled") and (
+            settings.get("native_enabled") or settings.get("only_entrypoint", True)
+        ):
 
             @app.middleware("http")
             async def utility_entrypoint_only(request, call_next):
-                if request.url.path != ENTRYPOINT and request.url.path != "/health":
+                allowed = (
+                    {ROOT + path for path in ROUTES}
+                    if settings.get("native_enabled")
+                    else {ENTRYPOINT}
+                )
+                if request.url.path not in allowed and request.url.path != "/health":
                     return JSONResponse(status_code=404, content={"error": "Not found"})
-                if request.url.path == ENTRYPOINT and request.method != "POST":
+                method = (
+                    ROUTES.get(request.url.path[len(ROOT) :], ("POST",))[0]
+                    if settings.get("native_enabled")
+                    else "POST"
+                )
+                if request.url.path in allowed and request.method != method:
                     return JSONResponse(
                         status_code=405,
                         content={"error": "POST required"},
-                        headers={"Allow": "POST"},
+                        headers={"Allow": method},
                     )
                 return await call_next(request)
 
@@ -218,7 +232,9 @@ class NyaProxyApp:
             )
 
         settings = utility_settings(self.config)
-        if settings.get("enabled") and request.url.path == ENTRYPOINT:
+        if settings.get("enabled") and (
+            request.url.path == ENTRYPOINT or settings.get("native_enabled")
+        ):
             # Require a bearer credential, never a browser session cookie.
             if (
                 self.auth.is_auth_disabled()
@@ -228,6 +244,8 @@ class NyaProxyApp:
                 return JSONResponse(
                     status_code=403, content={"error": "Invalid proxy key"}
                 )
+            if settings.get("native_enabled"):
+                return await self.native_gateway.handle(request, self.core, settings)
             return await self.utility_admission.handle(request, self.core, settings)
         else:
             req = await ProxyRequest.from_request(request)
@@ -285,7 +303,13 @@ class NyaProxyApp:
             # that applies a configuration change.
             self.restore_runtime_state()
             # Mount sub-applications for NyaProxy if available
-            if not (settings.get("enabled") and settings.get("only_entrypoint", True)):
+            if not (
+                settings.get("enabled")
+                and (
+                    settings.get("native_enabled")
+                    or settings.get("only_entrypoint", True)
+                )
+            ):
                 self.init_config_ui()
                 self.init_dashboard()
             # Initialize proxy routes last to act as a catch-all

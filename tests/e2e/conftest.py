@@ -20,6 +20,22 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 
 import nya
 
+
+@pytest.fixture(autouse=True)
+def isolate_gateway_environment(monkeypatch):
+    """E2E children must use their own temporary config, never host/unit state."""
+    for name in (
+        "CONFIG_PATH",
+        "SCHEMA_PATH",
+        "SERVER_HOST",
+        "SERVER_PORT",
+        "REMOTE_CONFIG_URL",
+        "REMOTE_CONFIG_API_KEY",
+        "REMOTE_CONFIG_APP_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 PROXY_KEY = "test-proxy-key"
 UPSTREAM_KEYS = ("key-a", "key-b", "key-c")
 
@@ -192,6 +208,7 @@ def upstream_server():
 def proxy_server(tmp_path: Path, upstream_server):
     upstream_url, _ = upstream_server
     processes: list[subprocess.Popen] = []
+    output_logs = []
 
     def start_proxy(
         *,
@@ -316,12 +333,16 @@ uvicorn.run(
 """
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
+        # Undrained Windows pipes fill on expected error/burst logs and block
+        # the server event loop, masquerading as credential release failures.
+        output = (tmp_path / f"process-{port}.log").open("w", encoding="utf-8")
+        output_logs.append(output)
         process = subprocess.Popen(
             [sys.executable, "-c", code, str(config_path), str(schema_path), str(port)],
             cwd=os.getcwd(),
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=output,
+            stderr=output,
             text=True,
         )
         processes.append(process)
@@ -338,3 +359,5 @@ uvicorn.run(
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+    for output in output_logs:
+        output.close()

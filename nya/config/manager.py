@@ -161,6 +161,29 @@ class ConfigManager:
                 "allow_credentials is true"
             )
 
+        utility = server.get("nai_utility", {})
+        if utility.get("native_enabled"):
+            from urllib.parse import urlsplit
+
+            if not utility.get("enabled"):
+                errors.append("server.nai_utility.native_enabled requires enabled")
+            if not server.get("api_key") or "novelai" not in apis:
+                errors.append("Native NovelAI requires server.api_key and apis.novelai")
+            for target in ("image", "account", "text"):
+                url = urlsplit(utility.get("upstreams", {}).get(target, ""))
+                if (
+                    url.scheme not in ("http", "https")
+                    or not url.hostname
+                    or url.username
+                    or url.password
+                    or url.query
+                    or url.fragment
+                    or url.path not in ("", "/")
+                ):
+                    errors.append(
+                        f"server.nai_utility.upstreams.{target}: use a fixed HTTP(S) origin without userinfo/path/query/fragment"
+                    )
+
         claimed_routes = {route: route for route in apis}
         settings_scopes = [
             ("default_settings", defaults),

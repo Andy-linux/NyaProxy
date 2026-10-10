@@ -458,6 +458,25 @@
                             "type": "boolean",
                             "default": false
                         },
+                        "native_enabled": {"type": "boolean", "default": false},
+                        "legacy_entrypoint": {"type": "boolean", "default": true},
+                        "upstreams": {
+                            "type": "object", "additionalProperties": false,
+                            "required": ["image", "account", "text"],
+                            "properties": {
+                                "image": {"type": "string", "pattern": "^https?://.+"},
+                                "account": {"type": "string", "pattern": "^https?://.+"},
+                                "text": {"type": "string", "pattern": "^https?://.+"}
+                            }
+                        },
+                        "account_fields": {"type": "array", "items": {"type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9_.]*$"}},
+                        "max_account_response_bytes": {"type": "integer", "minimum": 1},
+                        "read_max_concurrency": {"type": "integer", "minimum": 1},
+                        "read_min_interval_seconds": {"type": "number", "minimum": 0},
+                        "generation_timeout_seconds": {"type": "number", "minimum": 0.001},
+                        "upscale_timeout_seconds": {"type": "number", "minimum": 0.001},
+                        "text_timeout_seconds": {"type": "number", "minimum": 0.001},
+                        "account_timeout_seconds": {"type": "number", "minimum": 0.001},
                         "only_entrypoint": {
                             "type": "boolean",
                             "default": true

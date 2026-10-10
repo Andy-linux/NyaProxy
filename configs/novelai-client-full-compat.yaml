@@ -1,0 +1,53 @@
+# Opt-in native compatibility example. NOT a production replacement.
+# Hosts verified from public official APP endpoint table; no paid live validation.
+# Preserve your deployment's actual ports/TLS/queue/body policies during migration.
+server:
+  api_key: [change-me-admin-key, change-me-client-key]
+  nai_utility:
+    enabled: true
+    native_enabled: true
+    legacy_entrypoint: true
+    only_entrypoint: true
+    upstreams:
+      image: https://image.novelai.net
+      account: https://image.novelai.net
+      text: https://text.novelai.net
+    # account_fields omitted: endpoint-specific verified safe scalar defaults.
+    # Explicit [] disables balance fields (unknown, not zero).
+    max_account_response_bytes: 65536
+    read_max_concurrency: 4
+    read_min_interval_seconds: 1
+    max_waiting_requests: 1  # Example only; deployed limit is NOT known.
+    max_body_bytes: 33554432
+    max_waiting_body_bytes: 100663296
+    upload_timeout_seconds: 30
+    queue_wait_seconds: 120
+    generation_timeout_seconds: 300
+    upscale_timeout_seconds: 300
+    text_timeout_seconds: 120
+    account_timeout_seconds: 15
+  dashboard:
+    enabled: false
+  logging:
+    enabled: false
+    level: warning
+  trusted_proxies: []
+  cors:
+    allow_origins: []
+    allow_credentials: false
+    allow_methods: [POST, GET]
+    allow_headers: [Authorization, Content-Type, Accept]
+default_settings:
+  key_variable: keys
+  key_concurrency: false
+  retry:
+    enabled: false
+apis:
+  novelai:
+    name: NovelAI compatibility
+    endpoint: https://image.novelai.net
+    key_variable: keys
+    headers:
+      Authorization: "Bearer ${{keys}}"
+    variables:
+      keys: [change-me-real-nai-key]
